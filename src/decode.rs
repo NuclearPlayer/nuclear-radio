@@ -1,5 +1,7 @@
-use std::io::{self, BufReader, Read};
+use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::process::{Child, ChildStdout, Command, Stdio};
+
+use songbird::input::core::io::MediaSource;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
@@ -45,6 +47,25 @@ impl PcmSource {
 impl Read for PcmSource {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.stdout.read(buf)
+    }
+}
+
+impl Seek for PcmSource {
+    fn seek(&mut self, _: SeekFrom) -> io::Result<u64> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "PcmSource is a live stream and cannot seek",
+        ))
+    }
+}
+
+impl MediaSource for PcmSource {
+    fn is_seekable(&self) -> bool {
+        false
+    }
+
+    fn byte_len(&self) -> Option<u64> {
+        None
     }
 }
 

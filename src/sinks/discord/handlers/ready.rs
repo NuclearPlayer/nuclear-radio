@@ -1,5 +1,6 @@
 use serenity::all::{Context, Ready};
+use tracing::info;
 
 pub async fn ready(_ctx: Context, ready: Ready) {
-    println!("Logged in as {} (id={})", ready.user.name, ready.user.id);
+    info!(name = %ready.user.name, id = %ready.user.id, "Logged in");
 }
