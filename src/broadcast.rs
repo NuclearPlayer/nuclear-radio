@@ -47,7 +47,10 @@ impl Broadcast {
         }
     }
 
-    async fn S(&self, youtube_url: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn play_track(
+        &self,
+        youtube_url: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let stream_url = source::resolve_stream_url(youtube_url).await?;
         let mut pcm = decode::PcmSource::spawn(&stream_url)?;
 
