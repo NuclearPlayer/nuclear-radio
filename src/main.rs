@@ -1,4 +1,5 @@
 mod config;
+mod decode;
 mod runtime;
 mod sinks;
 mod source;
