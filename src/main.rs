@@ -1,3 +1,5 @@
+mod config;
+mod discord;
 mod source;
 
 fn load_env() {
@@ -9,15 +11,16 @@ fn load_env() {
 async fn main() {
     load_env();
 
-    let url = std::env::args()
-        .nth(1)
-        .expect("usage: nuclear-radio <youtube-url>");
-
-    match source::resolve_stream_url(&url).await {
-        Ok(stream_url) => println!("{stream_url}"),
+    let config = match config::load() {
+        Ok(config) => config,
         Err(error) => {
-            eprintln!("error: {error}");
+            eprintln!("invalid configuration: {error}");
             std::process::exit(1);
         }
+    };
+
+    if let Err(error) = discord::run(&config).await {
+        eprintln!("discord client error: {error}");
+        std::process::exit(1);
     }
 }
