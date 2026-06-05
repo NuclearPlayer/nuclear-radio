@@ -1,5 +1,5 @@
 mod config;
-mod discord;
+mod sinks;
 mod source;
 
 fn load_env() {
@@ -14,13 +14,13 @@ async fn main() {
     let config = match config::load() {
         Ok(config) => config,
         Err(error) => {
-            eprintln!("invalid configuration: {error}");
+            eprintln!("Invalid configuration: {error}");
             std::process::exit(1);
         }
     };
 
-    if let Err(error) = discord::run(&config).await {
-        eprintln!("discord client error: {error}");
+    if let Err(error) = sinks::discord::run(&config).await {
+        eprintln!("Discord client error: {error}");
         std::process::exit(1);
     }
 }
