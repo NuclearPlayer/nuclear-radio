@@ -1,7 +1,14 @@
 mod source;
 
+fn load_env() {
+    dotenvy::from_filename(".env.local").ok();
+    dotenvy::from_filename(".env").ok();
+}
+
 #[tokio::main]
 async fn main() {
+    load_env();
+
     let url = std::env::args()
         .nth(1)
         .expect("usage: nuclear-radio <youtube-url>");
