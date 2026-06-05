@@ -1,9 +1,16 @@
+mod broadcast;
 mod config;
 mod decode;
+mod playlist;
+mod receiver;
 mod runtime;
 mod sinks;
 mod source;
 
+use std::process::ExitCode;
+use std::sync::Arc;
+
+use broadcast::Broadcast;
 use runtime::Runtime;
 use sinks::discord::DiscordSink;
 use tracing_subscriber::EnvFilter;
@@ -20,7 +27,7 @@ fn init_tracing() {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
     load_env();
     init_tracing();
 
@@ -28,15 +35,28 @@ async fn main() {
         Ok(config) => config,
         Err(error) => {
             eprintln!("Invalid configuration: {error}");
-            std::process::exit(1);
+            return ExitCode::FAILURE;
         }
     };
 
+    let playlist = match playlist::load() {
+        Ok(playlist) => playlist,
+        Err(error) => {
+            eprintln!("Invalid playlist: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let broadcast = Arc::new(Broadcast::new(playlist));
+    Arc::clone(&broadcast).spawn();
+
     let mut runtime = Runtime::new();
-    runtime.add(DiscordSink::new(&config));
+    runtime.add(DiscordSink::new(&config, broadcast));
 
     if let Err(error) = runtime.run().await {
         eprintln!("Runtime error: {error}");
-        std::process::exit(1);
+        return ExitCode::FAILURE;
     }
+
+    ExitCode::SUCCESS
 }

@@ -8,11 +8,14 @@ use serenity::async_trait as serenity_async_trait;
 use serenity::prelude::*;
 use songbird::{SerenityInit, Songbird};
 
+use crate::broadcast::Broadcast;
 use crate::config::Config;
 
 use super::{Sink, SinkResult};
 
-struct Handler;
+struct Handler {
+    broadcast: Arc<Broadcast>,
+}
 
 #[serenity_async_trait]
 impl EventHandler for Handler {
@@ -21,12 +24,13 @@ impl EventHandler for Handler {
     }
 
     async fn guild_create(&self, ctx: Context, guild: Guild, is_new: Option<bool>) {
-        handlers::guild_create::guild_create(ctx, guild, is_new).await;
+        handlers::guild_create::guild_create(ctx, guild, is_new, &self.broadcast).await;
     }
 }
 
 pub struct DiscordSink {
     token: String,
+    broadcast: Arc<Broadcast>,
     running: Option<Running>,
 }
 
@@ -36,9 +40,10 @@ struct Running {
 }
 
 impl DiscordSink {
-    pub fn new(config: &Config) -> Self {
+    pub fn new(config: &Config, broadcast: Arc<Broadcast>) -> Self {
         Self {
             token: config.discord_token.clone(),
+            broadcast,
             running: None,
         }
     }
@@ -51,14 +56,16 @@ impl Sink for DiscordSink {
 
         let voice = Songbird::serenity();
         let mut client = Client::builder(&self.token, intents)
-            .event_handler(Handler)
+            .event_handler(Handler {
+                broadcast: self.broadcast.clone(),
+            })
             .register_songbird_with(voice.clone())
             .await?;
 
         let shards = client.shard_manager.clone();
         tokio::spawn(async move {
             if let Err(error) = client.start().await {
-                eprintln!("discord client error: {error}");
+                eprintln!("Discord client error: {error}");
             }
         });
 
