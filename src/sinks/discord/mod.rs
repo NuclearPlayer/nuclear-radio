@@ -7,6 +7,7 @@ use serenity::all::{Context, Guild, Ready, ShardManager};
 use serenity::async_trait as serenity_async_trait;
 use serenity::prelude::*;
 use songbird::{SerenityInit, Songbird};
+use tokio::sync::Mutex;
 
 use crate::audio_stream::AudioStream;
 use crate::config::Config;
@@ -15,11 +16,13 @@ use super::{Sink, SinkResult};
 
 struct Handler {
     stream: AudioStream,
+    ctx: Arc<Mutex<Option<Context>>>,
 }
 
 #[serenity_async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
+        *self.ctx.lock().await = Some(ctx.clone());
         handlers::ready::ready(ctx, ready).await;
     }
 
@@ -58,6 +61,7 @@ impl Sink for DiscordSink {
         let mut client = Client::builder(&self.token, intents)
             .event_handler(Handler {
                 stream: self.stream.clone(),
+                ctx: Arc::new(Mutex::new(None)),
             })
             .register_songbird_with(voice.clone())
             .await?;
