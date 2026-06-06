@@ -1,8 +1,8 @@
+mod audio_stream;
 mod broadcast;
 mod config;
 mod decode;
 mod playlist;
-mod receiver;
 mod runtime;
 mod sinks;
 mod source;
@@ -10,6 +10,7 @@ mod source;
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use audio_stream::AudioStream;
 use broadcast::Broadcast;
 use runtime::Runtime;
 use sinks::discord::DiscordSink;
@@ -47,11 +48,12 @@ async fn main() -> ExitCode {
         }
     };
 
-    let broadcast = Arc::new(Broadcast::new(playlist));
-    Arc::clone(&broadcast).spawn();
+    let stream = AudioStream::new();
+    let broadcast = Arc::new(Broadcast::new(playlist, stream.clone()));
+    broadcast.spawn();
 
     let mut runtime = Runtime::new();
-    runtime.add(DiscordSink::new(&config, broadcast));
+    runtime.add(DiscordSink::new(&config, stream));
 
     if let Err(error) = runtime.run().await {
         eprintln!("Runtime error: {error}");

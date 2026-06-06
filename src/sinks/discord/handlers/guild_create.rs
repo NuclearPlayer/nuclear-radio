@@ -2,12 +2,11 @@ use serenity::all::{ChannelId, ChannelType, Context, CreateChannel, Guild};
 use songbird::input::{Input, RawAdapter};
 use tracing::error;
 
-use crate::broadcast::Broadcast;
-use crate::receiver::BroadcastReceiver;
+use crate::audio_stream::AudioStream;
 
 const CHANNEL_NAME: &str = "Nuclear Radio";
 
-pub async fn guild_create(ctx: Context, guild: Guild, _is_new: Option<bool>, broadcast: &Broadcast) {
+pub async fn guild_create(ctx: Context, guild: Guild, _is_new: Option<bool>, stream: &AudioStream) {
     let channel_id = match find_radio_channel(&guild) {
         Some(id) => id,
         None => match create_radio_channel(&ctx, &guild).await {
@@ -31,8 +30,7 @@ pub async fn guild_create(ctx: Context, guild: Guild, _is_new: Option<bool>, bro
         }
     };
 
-    let receiver = BroadcastReceiver::new(broadcast.subscribe());
-    let input: Input = RawAdapter::new(receiver, 48000, 2).into();
+    let input: Input = RawAdapter::new(stream.clone(), 48000, 2).into();
     call.lock().await.play_input(input);
 }
 

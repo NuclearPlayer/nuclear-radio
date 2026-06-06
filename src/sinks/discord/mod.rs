@@ -8,13 +8,13 @@ use serenity::async_trait as serenity_async_trait;
 use serenity::prelude::*;
 use songbird::{SerenityInit, Songbird};
 
-use crate::broadcast::Broadcast;
+use crate::audio_stream::AudioStream;
 use crate::config::Config;
 
 use super::{Sink, SinkResult};
 
 struct Handler {
-    broadcast: Arc<Broadcast>,
+    stream: AudioStream,
 }
 
 #[serenity_async_trait]
@@ -24,13 +24,13 @@ impl EventHandler for Handler {
     }
 
     async fn guild_create(&self, ctx: Context, guild: Guild, is_new: Option<bool>) {
-        handlers::guild_create::guild_create(ctx, guild, is_new, &self.broadcast).await;
+        handlers::guild_create::guild_create(ctx, guild, is_new, &self.stream).await;
     }
 }
 
 pub struct DiscordSink {
     token: String,
-    broadcast: Arc<Broadcast>,
+    stream: AudioStream,
     running: Option<Running>,
 }
 
@@ -40,10 +40,10 @@ struct Running {
 }
 
 impl DiscordSink {
-    pub fn new(config: &Config, broadcast: Arc<Broadcast>) -> Self {
+    pub fn new(config: &Config, stream: AudioStream) -> Self {
         Self {
             token: config.discord_token.clone(),
-            broadcast,
+            stream,
             running: None,
         }
     }
@@ -57,7 +57,7 @@ impl Sink for DiscordSink {
         let voice = Songbird::serenity();
         let mut client = Client::builder(&self.token, intents)
             .event_handler(Handler {
-                broadcast: self.broadcast.clone(),
+                stream: self.stream.clone(),
             })
             .register_songbird_with(voice.clone())
             .await?;

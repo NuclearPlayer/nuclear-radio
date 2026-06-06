@@ -2,27 +2,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rand::seq::IndexedRandom;
-use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
+use crate::audio_stream::AudioStream;
 use crate::{decode, source};
-
-const CHUNK_SIZE: usize = 960 * 2 * 4;
 
 pub struct Broadcast {
     playlist: Vec<String>,
-    sender: broadcast::Sender<Arc<Vec<u8>>>,
+    stream: AudioStream,
 }
 
 impl Broadcast {
-    pub fn new(playlist: Vec<String>) -> Self {
-        let (sender, _) = broadcast::channel(64);
-        Self { playlist, sender }
-    }
-
-    pub fn subscribe(&self) -> broadcast::Receiver<Arc<Vec<u8>>> {
-        self.sender.subscribe()
+    pub fn new(playlist: Vec<String>, stream: AudioStream) -> Self {
+        Self { playlist, stream }
     }
 
     pub fn spawn(self: Arc<Self>) -> JoinHandle<()> {
@@ -55,16 +48,15 @@ impl Broadcast {
         let mut pcm = decode::PcmSource::spawn(&stream_url)?;
 
         tokio::task::spawn_blocking({
-            let sender = self.sender.clone();
+            let mut stream = self.stream.clone();
             move || {
-                use std::io::Read;
-                let mut buf = vec![0u8; CHUNK_SIZE];
+                use std::io::{Read, Write};
+                let mut buf = vec![0u8; 960 * 2 * 4];
                 loop {
                     match pcm.read(&mut buf) {
                         Ok(0) => break,
                         Ok(n) => {
-                            let chunk = Arc::new(buf[..n].to_vec());
-                            if sender.send(chunk).is_err() {
+                            if stream.write_all(&buf[..n]).is_err() {
                                 break;
                             }
                         }
