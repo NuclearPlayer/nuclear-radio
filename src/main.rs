@@ -52,7 +52,7 @@ async fn main() -> ExitCode {
     let broadcast = Arc::new(Broadcast::new(playlist, stream.clone()));
     broadcast.spawn();
 
-    let mut runtime = Runtime::new();
+    let mut runtime = Runtime::new(stream.clone());
     runtime.add(DiscordSink::new(&config, stream));
 
     if let Err(error) = runtime.run().await {

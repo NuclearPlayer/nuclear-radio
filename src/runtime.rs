@@ -1,12 +1,17 @@
+use crate::audio_stream::AudioStream;
 use crate::sinks::{Sink, SinkResult};
 
 pub struct Runtime {
+    stream: AudioStream,
     sinks: Vec<Box<dyn Sink>>,
 }
 
 impl Runtime {
-    pub fn new() -> Self {
-        Self { sinks: Vec::new() }
+    pub fn new(stream: AudioStream) -> Self {
+        Self {
+            stream,
+            sinks: Vec::new(),
+        }
     }
 
     pub fn add(&mut self, sink: impl Sink + 'static) -> &mut Self {
@@ -19,17 +24,16 @@ impl Runtime {
             sink.start().await?;
         }
 
-        let shutdown = async {
-            if tokio::signal::ctrl_c().await.is_err() {
-                eprintln!("Failed to listen for shutdown signal");
-            }
+        if tokio::signal::ctrl_c().await.is_err() {
+            eprintln!("Failed to listen for shutdown signal");
+        }
 
-            for sink in self.sinks.iter_mut() {
-                sink.cleanup().await;
-            }
-        };
+        self.stream.close();
 
-        shutdown.await;
+        for sink in self.sinks.iter_mut() {
+            sink.cleanup().await;
+        }
+
         Ok(())
     }
 }

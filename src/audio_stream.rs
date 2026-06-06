@@ -1,38 +1,58 @@
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 
 use songbird::input::core::io::MediaSource;
 
 const BUFFER_SIZE: usize = 16 * 1024 * 1024;
 
+struct Inner {
+    buffer: Mutex<Vec<u8>>,
+    condvar: Condvar,
+    closed: AtomicBool,
+}
+
 #[derive(Clone)]
 pub struct AudioStream {
-    inner: Arc<(Mutex<Vec<u8>>, Condvar)>,
+    inner: Arc<Inner>,
 }
 
 impl AudioStream {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new((Mutex::new(Vec::new()), Condvar::new())),
+            inner: Arc::new(Inner {
+                buffer: Mutex::new(Vec::new()),
+                condvar: Condvar::new(),
+                closed: AtomicBool::new(false),
+            }),
         }
+    }
+
+    pub fn close(&self) {
+        self.inner.closed.store(true, Ordering::Relaxed);
+        self.inner.condvar.notify_all();
     }
 }
 
 impl Read for AudioStream {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let (mutex, condvar) = &*self.inner;
-        let mut buffer = mutex.lock().expect("Mutex was poisoned");
+        let inner = &*self.inner;
+        let mut buffer = inner.buffer.lock().expect("Mutex was poisoned");
 
         if buffer.is_empty() {
+            if inner.closed.load(Ordering::Relaxed) {
+                return Ok(0);
+            }
+
             buf.fill(0);
-            condvar.notify_all();
+            inner.condvar.notify_all();
             return Ok(buf.len());
         }
 
         let n = buf.len().min(buffer.len());
         buf[..n].copy_from_slice(&buffer[..n]);
         buffer.drain(..n);
-        condvar.notify_all();
+        inner.condvar.notify_all();
 
         Ok(n)
     }
@@ -40,24 +60,30 @@ impl Read for AudioStream {
 
 impl Write for AudioStream {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let (mutex, condvar) = &*self.inner;
-        let mut buffer = mutex.lock().expect("Mutex was poisoned");
+        let inner = &*self.inner;
+        let mut buffer = inner.buffer.lock().expect("Mutex was poisoned");
 
         while buffer.len() + buf.len() > BUFFER_SIZE {
-            buffer = condvar.wait(buffer).expect("Mutex was poisoned");
+            if inner.closed.load(Ordering::Relaxed) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "AudioStream closed",
+                ));
+            }
+            buffer = inner.condvar.wait(buffer).expect("Mutex was poisoned");
         }
 
         buffer.extend_from_slice(buf);
-        condvar.notify_all();
+        inner.condvar.notify_all();
 
         Ok(buf.len())
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        let (mutex, condvar) = &*self.inner;
-        let mut buffer = mutex.lock().expect("Mutex was poisoned");
+        let inner = &*self.inner;
+        let mut buffer = inner.buffer.lock().expect("Mutex was poisoned");
         buffer.clear();
-        condvar.notify_all();
+        inner.condvar.notify_all();
         Ok(())
     }
 }
