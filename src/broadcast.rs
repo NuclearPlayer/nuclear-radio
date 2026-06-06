@@ -56,7 +56,7 @@ impl Broadcast {
         }
     }
 
-    async fn next_url(&self) -> String {
+    pub(crate) async fn next_url(&self) -> String {
         self.queue
             .lock()
             .await
@@ -105,5 +105,80 @@ impl Broadcast {
         .await?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use crate::audio_stream::AudioStream;
+    use crate::track::TrackMetadata;
+
+    use super::Broadcast;
+
+    fn test_metadata(youtube_url: &str) -> TrackMetadata {
+        TrackMetadata {
+            artist: None,
+            title: None,
+            video_title: youtube_url.to_owned(),
+            duration: Duration::ZERO,
+            youtube_url: youtube_url.to_owned(),
+            thumbnail_url: String::new(),
+        }
+    }
+
+    fn test_broadcast() -> Broadcast {
+        let playlist = vec![
+            "https://youtube.com/watch?v=playlist1".to_owned(),
+            "https://youtube.com/watch?v=playlist2".to_owned(),
+            "https://youtube.com/watch?v=playlist3".to_owned(),
+        ];
+        Broadcast::new(playlist, AudioStream::new())
+    }
+
+    #[tokio::test]
+    async fn next_url_picks_from_playlist_when_queue_is_empty() {
+        let broadcast = test_broadcast();
+
+        let url = broadcast.next_url().await;
+
+        assert!(
+            broadcast.playlist.contains(&url),
+            "Expected URL from playlist, got {url}"
+        );
+    }
+
+    #[tokio::test]
+    async fn next_url_pops_from_queue_in_fifo_order() {
+        let broadcast = test_broadcast();
+        let queue = broadcast.queue();
+
+        {
+            let mut q = queue.lock().await;
+            q.push_back(test_metadata("https://youtube.com/watch?v=queued1"));
+            q.push_back(test_metadata("https://youtube.com/watch?v=queued2"));
+            q.push_back(test_metadata("https://youtube.com/watch?v=queued3"));
+        }
+
+        assert_eq!(broadcast.next_url().await, "https://youtube.com/watch?v=queued1");
+        assert_eq!(broadcast.next_url().await, "https://youtube.com/watch?v=queued2");
+        assert_eq!(broadcast.next_url().await, "https://youtube.com/watch?v=queued3");
+    }
+
+    #[tokio::test]
+    async fn next_url_falls_back_to_playlist_after_queue_drains() {
+        let broadcast = test_broadcast();
+        let queue = broadcast.queue();
+
+        queue.lock().await.push_back(test_metadata("https://youtube.com/watch?v=queued"));
+
+        assert_eq!(broadcast.next_url().await, "https://youtube.com/watch?v=queued");
+
+        let url = broadcast.next_url().await;
+        assert!(
+            broadcast.playlist.contains(&url),
+            "Expected URL from playlist after queue drained, got {url}"
+        );
     }
 }
