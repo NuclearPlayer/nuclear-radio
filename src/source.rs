@@ -2,7 +2,7 @@ use std::process::Stdio;
 
 use tokio::process::Command;
 
-use crate::track::Track;
+use crate::track::{Track, TrackMetadata};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SourceError {
@@ -19,12 +19,18 @@ pub enum SourceError {
 pub async fn resolve(youtube_url: &str) -> Result<Track, SourceError> {
     let output = Command::new("yt-dlp")
         .args([
-            "-f", "bestaudio",
-            "--print", "%(title)s",
-            "--print", "%(artist)s",
-            "--print", "%(track)s",
-            "--print", "%(duration)s",
-            "--print", "%(thumbnail)s",
+            "-f",
+            "bestaudio",
+            "--print",
+            "%(title)s",
+            "--print",
+            "%(artist)s",
+            "--print",
+            "%(track)s",
+            "--print",
+            "%(duration)s",
+            "--print",
+            "%(thumbnail)s",
             "-g",
             youtube_url,
         ])
@@ -41,6 +47,15 @@ pub async fn resolve(youtube_url: &str) -> Result<Track, SourceError> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut lines = stdout.lines();
 
-    Track::parse(youtube_url, &mut lines)
-        .ok_or(SourceError::MissingFields)
+    let metadata =
+        TrackMetadata::parse(youtube_url, &mut lines).ok_or(SourceError::MissingFields)?;
+    let stream_url = lines
+        .next()
+        .map(str::to_owned)
+        .ok_or(SourceError::MissingFields)?;
+
+    Ok(Track {
+        metadata,
+        stream_url,
+    })
 }

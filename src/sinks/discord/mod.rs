@@ -12,14 +12,14 @@ use tokio::sync::{watch, Mutex};
 
 use crate::audio_stream::AudioStream;
 use crate::config::Config;
-use crate::track::Track;
+use crate::track::TrackMetadata;
 
 use super::{Sink, SinkResult};
 
 struct Handler {
     stream: AudioStream,
     ctx: Arc<Mutex<Option<Context>>>,
-    now_playing: watch::Receiver<Option<Track>>,
+    now_playing: watch::Receiver<Option<TrackMetadata>>,
 }
 
 #[serenity_async_trait]
@@ -41,7 +41,7 @@ impl EventHandler for Handler {
 pub struct DiscordSink {
     token: String,
     stream: AudioStream,
-    now_playing: watch::Receiver<Option<Track>>,
+    now_playing: watch::Receiver<Option<TrackMetadata>>,
     running: Option<Running>,
 }
 
@@ -54,7 +54,7 @@ impl DiscordSink {
     pub fn new(
         config: &Config,
         stream: AudioStream,
-        now_playing: watch::Receiver<Option<Track>>,
+    now_playing: watch::Receiver<Option<TrackMetadata>>,
     ) -> Self {
         Self {
             token: config.discord_token.clone(),

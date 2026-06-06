@@ -7,13 +7,13 @@ use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use crate::audio_stream::AudioStream;
-use crate::track::Track;
+use crate::track::TrackMetadata;
 use crate::{decode, source};
 
 pub struct Broadcast {
     playlist: Vec<String>,
     stream: AudioStream,
-    now_playing: watch::Sender<Option<Track>>,
+    now_playing: watch::Sender<Option<TrackMetadata>>,
 }
 
 impl Broadcast {
@@ -26,7 +26,7 @@ impl Broadcast {
         }
     }
 
-    pub fn subscribe(&self) -> watch::Receiver<Option<Track>> {
+    pub fn subscribe(&self) -> watch::Receiver<Option<TrackMetadata>> {
         self.now_playing.subscribe()
     }
 
@@ -59,7 +59,7 @@ impl Broadcast {
         info!(track = %track, "Now playing");
 
         let mut pcm = decode::PcmSource::spawn(&track.stream_url)?;
-        let _ = self.now_playing.send(Some(track));
+        let _ = self.now_playing.send(Some(track.metadata));
 
         tokio::task::spawn_blocking({
             let mut stream = self.stream.clone();
