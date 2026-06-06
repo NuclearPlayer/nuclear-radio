@@ -24,7 +24,7 @@ fn load_env() {
 
 fn init_tracing() {
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("nuclear_radio=debug,songbird=debug,serenity=warn"));
+        .unwrap_or_else(|_| EnvFilter::new("nuclear_radio=debug,songbird=warn,serenity=warn"));
     tracing_subscriber::fmt().with_env_filter(filter).init();
 }
 

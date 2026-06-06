@@ -1,9 +1,10 @@
+mod commands;
 mod handlers;
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use serenity::all::{Context, Guild, Ready, ShardManager};
+use serenity::all::{Context, Guild, Interaction, Ready, ShardManager};
 use serenity::async_trait as serenity_async_trait;
 use serenity::prelude::*;
 use songbird::{SerenityInit, Songbird};
@@ -26,6 +27,10 @@ impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
         *self.ctx.lock().await = Some(ctx.clone());
         handlers::ready::ready(ctx, ready, self.now_playing.clone()).await;
+    }
+
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        handlers::interaction::interaction_create(ctx, interaction).await;
     }
 
     async fn guild_create(&self, ctx: Context, guild: Guild, is_new: Option<bool>) {
