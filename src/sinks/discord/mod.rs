@@ -8,40 +8,37 @@ use serenity::all::{Context, Guild, Interaction, Ready, ShardManager};
 use serenity::async_trait as serenity_async_trait;
 use serenity::prelude::*;
 use songbird::{SerenityInit, Songbird};
-use tokio::sync::{watch, Mutex};
+use tokio::sync::Mutex;
 
-use crate::audio_stream::AudioStream;
+use crate::broadcast::Broadcast;
 use crate::config::Config;
-use crate::track::TrackMetadata;
 
 use super::{Sink, SinkResult};
 
 struct Handler {
-    stream: AudioStream,
+    broadcast: Arc<Broadcast>,
     ctx: Arc<Mutex<Option<Context>>>,
-    now_playing: watch::Receiver<Option<TrackMetadata>>,
 }
 
 #[serenity_async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
         *self.ctx.lock().await = Some(ctx.clone());
-        handlers::ready::ready(ctx, ready, self.now_playing.clone()).await;
+        handlers::ready::ready(ctx, ready, self.broadcast.subscribe()).await;
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        handlers::interaction::interaction_create(ctx, interaction).await;
+        handlers::interaction::interaction_create(ctx, interaction, self.broadcast.queue()).await;
     }
 
     async fn guild_create(&self, ctx: Context, guild: Guild, is_new: Option<bool>) {
-        handlers::guild_create::guild_create(ctx, guild, is_new, &self.stream).await;
+        handlers::guild_create::guild_create(ctx, guild, is_new, &self.broadcast.stream()).await;
     }
 }
 
 pub struct DiscordSink {
     token: String,
-    stream: AudioStream,
-    now_playing: watch::Receiver<Option<TrackMetadata>>,
+    broadcast: Arc<Broadcast>,
     running: Option<Running>,
 }
 
@@ -51,15 +48,10 @@ struct Running {
 }
 
 impl DiscordSink {
-    pub fn new(
-        config: &Config,
-        stream: AudioStream,
-    now_playing: watch::Receiver<Option<TrackMetadata>>,
-    ) -> Self {
+    pub fn new(config: &Config, broadcast: Arc<Broadcast>) -> Self {
         Self {
             token: config.discord_token.clone(),
-            stream,
-            now_playing,
+            broadcast,
             running: None,
         }
     }
@@ -73,9 +65,8 @@ impl Sink for DiscordSink {
         let voice = Songbird::serenity();
         let mut client = Client::builder(&self.token, intents)
             .event_handler(Handler {
-                stream: self.stream.clone(),
+                broadcast: Arc::clone(&self.broadcast),
                 ctx: Arc::new(Mutex::new(None)),
-                now_playing: self.now_playing.clone(),
             })
             .register_songbird_with(voice.clone())
             .await?;

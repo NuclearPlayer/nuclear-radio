@@ -1,4 +1,4 @@
-pub mod ping;
+pub mod play;
 
 use serenity::all::Context;
 use serenity::builder::CreateCommand;
@@ -6,7 +6,7 @@ use serenity::model::application::Command;
 use tracing::{error, info};
 
 fn all() -> Vec<CreateCommand> {
-    vec![ping::register()]
+    vec![play::register()]
 }
 
 pub async fn register(ctx: &Context) {

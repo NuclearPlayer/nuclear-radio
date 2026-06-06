@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rand::seq::IndexedRandom;
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{Mutex, watch};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
@@ -29,6 +29,10 @@ impl Broadcast {
             now_playing,
             queue: Arc::new(Mutex::new(VecDeque::new())),
         }
+    }
+
+    pub fn stream(&self) -> AudioStream {
+        self.stream.clone()
     }
 
     pub fn subscribe(&self) -> watch::Receiver<Option<TrackMetadata>> {
@@ -161,19 +165,34 @@ mod tests {
             q.push_back(test_metadata("https://youtube.com/watch?v=queued3"));
         }
 
-        assert_eq!(broadcast.next_url().await, "https://youtube.com/watch?v=queued1");
-        assert_eq!(broadcast.next_url().await, "https://youtube.com/watch?v=queued2");
-        assert_eq!(broadcast.next_url().await, "https://youtube.com/watch?v=queued3");
+        assert_eq!(
+            broadcast.next_url().await,
+            "https://youtube.com/watch?v=queued1"
+        );
+        assert_eq!(
+            broadcast.next_url().await,
+            "https://youtube.com/watch?v=queued2"
+        );
+        assert_eq!(
+            broadcast.next_url().await,
+            "https://youtube.com/watch?v=queued3"
+        );
     }
 
     #[tokio::test]
-    async fn next_url_falls_back_to_playlist_after_queue_drains() {
+    async fn next_url_falls_back_to_playlist_after_queue_ends() {
         let broadcast = test_broadcast();
         let queue = broadcast.queue();
 
-        queue.lock().await.push_back(test_metadata("https://youtube.com/watch?v=queued"));
+        queue
+            .lock()
+            .await
+            .push_back(test_metadata("https://youtube.com/watch?v=queued"));
 
-        assert_eq!(broadcast.next_url().await, "https://youtube.com/watch?v=queued");
+        assert_eq!(
+            broadcast.next_url().await,
+            "https://youtube.com/watch?v=queued"
+        );
 
         let url = broadcast.next_url().await;
         assert!(

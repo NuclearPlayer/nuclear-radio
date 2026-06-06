@@ -1,15 +1,16 @@
 use serenity::all::{Context, Interaction};
 use tracing::warn;
 
+use crate::broadcast::Queue;
 use crate::sinks::discord::commands;
 
-pub async fn interaction_create(ctx: Context, interaction: Interaction) {
+pub async fn interaction_create(ctx: Context, interaction: Interaction, queue: Queue) {
     let Interaction::Command(command) = interaction else {
         return;
     };
 
     match command.data.name.as_str() {
-        "ping" => commands::ping::run(&command, &ctx).await,
+        "play" => commands::play::run(&command, &ctx, queue).await,
         name => warn!(name, "Unknown command"),
     }
 }
