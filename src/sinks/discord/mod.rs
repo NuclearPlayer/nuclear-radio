@@ -7,23 +7,25 @@ use serenity::all::{Context, Guild, Ready, ShardManager};
 use serenity::async_trait as serenity_async_trait;
 use serenity::prelude::*;
 use songbird::{SerenityInit, Songbird};
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex};
 
 use crate::audio_stream::AudioStream;
 use crate::config::Config;
+use crate::track::Track;
 
 use super::{Sink, SinkResult};
 
 struct Handler {
     stream: AudioStream,
     ctx: Arc<Mutex<Option<Context>>>,
+    now_playing: watch::Receiver<Option<Track>>,
 }
 
 #[serenity_async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
         *self.ctx.lock().await = Some(ctx.clone());
-        handlers::ready::ready(ctx, ready).await;
+        handlers::ready::ready(ctx, ready, self.now_playing.clone()).await;
     }
 
     async fn guild_create(&self, ctx: Context, guild: Guild, is_new: Option<bool>) {
@@ -34,6 +36,7 @@ impl EventHandler for Handler {
 pub struct DiscordSink {
     token: String,
     stream: AudioStream,
+    now_playing: watch::Receiver<Option<Track>>,
     running: Option<Running>,
 }
 
@@ -43,10 +46,15 @@ struct Running {
 }
 
 impl DiscordSink {
-    pub fn new(config: &Config, stream: AudioStream) -> Self {
+    pub fn new(
+        config: &Config,
+        stream: AudioStream,
+        now_playing: watch::Receiver<Option<Track>>,
+    ) -> Self {
         Self {
             token: config.discord_token.clone(),
             stream,
+            now_playing,
             running: None,
         }
     }
@@ -62,6 +70,7 @@ impl Sink for DiscordSink {
             .event_handler(Handler {
                 stream: self.stream.clone(),
                 ctx: Arc::new(Mutex::new(None)),
+                now_playing: self.now_playing.clone(),
             })
             .register_songbird_with(voice.clone())
             .await?;

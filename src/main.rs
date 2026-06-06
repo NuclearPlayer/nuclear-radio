@@ -51,10 +51,11 @@ async fn main() -> ExitCode {
 
     let stream = AudioStream::new();
     let broadcast = Arc::new(Broadcast::new(playlist, stream.clone()));
+    let now_playing = broadcast.subscribe();
     broadcast.spawn();
 
     let mut runtime = Runtime::new(stream.clone());
-    runtime.add(DiscordSink::new(&config, stream));
+    runtime.add(DiscordSink::new(&config, stream, now_playing));
 
     if let Err(error) = runtime.run().await {
         eprintln!("Runtime error: {error}");
