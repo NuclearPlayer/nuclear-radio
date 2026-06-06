@@ -1,4 +1,5 @@
 pub mod play;
+pub mod queue;
 
 use serenity::all::Context;
 use serenity::builder::CreateCommand;
@@ -6,7 +7,7 @@ use serenity::model::application::Command;
 use tracing::{error, info};
 
 fn all() -> Vec<CreateCommand> {
-    vec![play::register()]
+    vec![play::register(), queue::register()]
 }
 
 pub async fn register(ctx: &Context) {

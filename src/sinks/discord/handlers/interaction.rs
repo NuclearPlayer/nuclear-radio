@@ -11,6 +11,7 @@ pub async fn interaction_create(ctx: Context, interaction: Interaction, queue: Q
 
     match command.data.name.as_str() {
         "play" => commands::play::run(&command, &ctx, queue).await,
+        "queue" => commands::queue::run(&command, &ctx, queue).await,
         name => warn!(name, "Unknown command"),
     }
 }
