@@ -6,6 +6,7 @@ mod playlist;
 mod runtime;
 mod sinks;
 mod source;
+mod track;
 
 use std::process::ExitCode;
 use std::sync::Arc;

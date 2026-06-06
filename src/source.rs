@@ -2,6 +2,8 @@ use std::process::Stdio;
 
 use tokio::process::Command;
 
+use crate::track::Track;
+
 #[derive(Debug, thiserror::Error)]
 pub enum SourceError {
     #[error("failed to run yt-dlp: {0}")]
@@ -10,13 +12,22 @@ pub enum SourceError {
     #[error("yt-dlp exited unsuccessfully: {0}")]
     Failed(String),
 
-    #[error("yt-dlp produced no stream URL")]
-    NoUrl,
+    #[error("yt-dlp output was missing expected fields")]
+    MissingFields,
 }
 
-pub async fn resolve_stream_url(youtube_url: &str) -> Result<String, SourceError> {
+pub async fn resolve(youtube_url: &str) -> Result<Track, SourceError> {
     let output = Command::new("yt-dlp")
-        .args(["-f", "bestaudio", "-g", youtube_url])
+        .args([
+            "-f", "bestaudio",
+            "--print", "%(title)s",
+            "--print", "%(artist)s",
+            "--print", "%(track)s",
+            "--print", "%(duration)s",
+            "--print", "%(thumbnail)s",
+            "-g",
+            youtube_url,
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -27,13 +38,9 @@ pub async fn resolve_stream_url(youtube_url: &str) -> Result<String, SourceError
         return Err(SourceError::Failed(stderr));
     }
 
-    let url = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .next()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(str::to_owned)
-        .ok_or(SourceError::NoUrl)?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
 
-    Ok(url)
+    Track::parse(youtube_url, &mut lines)
+        .ok_or(SourceError::MissingFields)
 }
