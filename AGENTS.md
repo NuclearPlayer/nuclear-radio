@@ -1,6 +1,6 @@
 # Nuclear Radio
 
-A Discord bot that runs a 24/7 internet radio station. It joins a voice channel called "Nuclear Radio" in every guild it's added to and continuously plays music from a curated playlist of YouTube URLs.
+A Discord bot that runs a 24/7 internet radio station. It joins a voice channel called "Nuclear Radio" in every guild it's added to and continuously plays music from a curated playlist of YouTube URLs. Users can queue tracks via the `/play` slash command.
 
 Deployed on Fly.io (Amsterdam region). CI deploys on push to `master`.
 
@@ -18,65 +18,72 @@ Deployed on Fly.io (Amsterdam region). CI deploys on push to `master`.
 
 The system has three layers: source resolution, audio pipeline, and output sinks.
 
+### Source resolution
+
+`ytdlp.rs` wraps the yt-dlp CLI. `source.rs` parses its output into domain types. `TrackMetadata` (no stream URL, used in queue and now-playing) and `Track` (metadata + stream URL, only created at play time) live in `track.rs`.
+
 ### Audio pipeline
 
-`Broadcast` is the core loop. It picks a random YouTube URL from the playlist, resolves it to a direct stream URL via yt-dlp, spawns ffmpeg to decode it to raw PCM, and writes the PCM bytes into an `AudioStream`.
+`Broadcast` is the core playback loop. Each iteration pops from the user queue (FIFO) or falls back to a random playlist pick, resolves the URL to a stream via yt-dlp, decodes it with ffmpeg, and writes PCM into a shared ring buffer (`AudioStream`). The buffer gives silence to readers when empty, so playback never stalls.
 
-`AudioStream` is a shared, bounded ring buffer that bridges the producer (Broadcast/ffmpeg) and consumers (sinks). It implements `Read`, `Write`, and Songbird's `MediaSource` trait. When the buffer is full, writers block. When it's empty, readers get silence (zero-filled buffers) instead of blocking, so playback never stalls.
+Consumers access `Broadcast` through `subscribe()` (now-playing watch channel), `queue()`, and `stream()`.
 
 ### Sinks
 
-A `Sink` is anything that consumes the audio stream. Currently there's only `DiscordSink`, but the abstraction exists to support additional outputs later (Icecast, HTTP streaming, etc.).
+A `Sink` consumes the audio stream. `Runtime` owns all sinks, starts them, and handles shutdown.
 
-The `Runtime` owns all sinks, starts them, waits for SIGINT, then cleans them up.
+- `DiscordSink`: On `guild_create` it finds or creates a "Nuclear Radio" voice channel, joins it, and feeds the shared `AudioStream` to Songbird. The bot's activity shows "Listening to Artist - Title".
 
-### Discord sink
+### Slash commands
 
-On `guild_create`, the bot finds or creates a voice channel named "Nuclear Radio", joins it via Songbird, and plays the shared `AudioStream` as a `RawAdapter` input.
+One file per command under `commands/`, routed by name match in `interaction.rs`. No command manager.
 
-The `Handler` struct implements Serenity's `EventHandler`. Event handlers are in `src/sinks/discord/handlers/`, one file per event.
+- `/play url:<string>`: responds immediately, resolves metadata in a background task, pushes to queue.
 
 ### Data flow
 
 ```
-tracks.txt (YouTube URLs)
-    |
-    v
-Broadcast (picks random URL, loops forever)
-    |
-    v
-yt-dlp (resolves to direct audio stream URL)
-    |
-    v
-ffmpeg (decodes to f32le PCM, 48kHz, stereo)
-    |
-    v
-AudioStream (shared ring buffer, 16MB)
-    |
-    v
-Songbird RawAdapter -> Discord voice channel
+User /play command -----> Queue
+                              |
+                              v
+tracks.txt (YouTube URLs) -> Broadcast (queue first, then random playlist pick)
+                              |
+                              v
+                         yt-dlp -> ffmpeg -> AudioStream (ring buffer)
+                              |
+                              v
+                         Songbird -> Discord voice channel
+                              |
+                         Bot activity: "Listening to Artist - Title"
 ```
 
 ## File map
 
 ```
 src/
-  main.rs           Entry point. Loads config, playlist, wires everything together.
+  main.rs           Entry point. Loads config, playlist, creates Broadcast and DiscordSink.
   config.rs         Config struct deserialized from env vars (DISCORD_TOKEN, DISCORD_CLIENT_ID).
   playlist.rs       Loads tracks.txt (embedded at compile time via include_str!).
-  source.rs         Calls yt-dlp to resolve a YouTube URL to a direct stream URL.
+  track.rs          TrackMetadata and Track structs, parsing, Display impls.
+  ytdlp.rs          yt-dlp CLI wrapper: fetch_metadata(), fetch_metadata_and_stream_url().
+  source.rs         Parsing layer: resolve() -> Track, resolve_metadata() -> TrackMetadata.
   decode.rs         Spawns ffmpeg as a child process, exposes stdout as a Read + MediaSource.
   audio_stream.rs   Shared ring buffer. The bridge between Broadcast and all sinks.
-  broadcast.rs      The main playback loop. Picks tracks, resolves, decodes, writes to stream.
+  broadcast.rs      Playback loop. Owns now-playing watch channel and queue. Unit tested.
   runtime.rs        Owns sinks, manages startup and shutdown.
   sinks/
     mod.rs          Sink trait definition.
     discord/
-      mod.rs        DiscordSink implementation. Creates the Serenity client, manages Songbird.
+      mod.rs        DiscordSink + Handler. Handler holds Arc<Broadcast>.
+      commands/
+        mod.rs      all() and register() for slash commands.
+        play.rs     /play url:<str> handler.
       handlers/
-        mod.rs
-        ready.rs    Logs successful login.
-        guild_create.rs  Finds/creates voice channel, joins it, starts playing the stream.
+        mod.rs      Re-exports handler functions.
+        ready.rs    Login -> command registration -> activity sync spawn.
+        activity.rs sync() loop + activity_for_track().
+        guild_create.rs  Finds/creates voice channel, joins, starts playback.
+        interaction.rs   Routes slash commands to handlers by name match.
 tracks.txt          Playlist of YouTube URLs, one per line.
 fly.toml            Fly.io deployment config.
 Dockerfile          Multi-stage build: cargo-chef for caching, bookworm-slim runtime with ffmpeg + yt-dlp.
@@ -94,10 +101,13 @@ Loaded from `.env.local` first, then `.env`, then the actual environment. Both `
 ## Key patterns and conventions
 
 - Handler functions live in their own files under `handlers/`, named after the event. The handler module re-exports them. The `EventHandler` impl in `discord/mod.rs` delegates to these functions.
+- Commands follow the same pattern: one file per command under `commands/`, routed by a match in `interaction.rs`.
 - External processes (yt-dlp, ffmpeg) are spawned as child processes. `PcmSource` kills its ffmpeg child on drop.
-- The codebase avoids `unwrap()` in fallible paths. `expect()` is used only for invariants ("Songbird should be registered at startup", "stdout was piped").
-- No command handling. This is a headless radio, not an interactive bot. It just plays music.
-- Tracing is used for logging, not `println!`. Log levels: `nuclear_radio=debug, songbird=debug, serenity=warn` by default, overridable via `RUST_LOG`.
+- `yt-dlp` CLI args live in `ytdlp.rs`; parsing of its output lives in `source.rs` and `track.rs`.
+- The codebase avoids `unwrap()` in fallible paths. `expect()` is used only for invariants.
+- Tracing is used for logging, not `println!`.
+- `Broadcast` owns shared state internally. Consumers get handles via `subscribe()`, `queue()`, and `stream()`.
+- `DiscordSink` receives `Arc<Broadcast>` rather than individual handles.
 
 ## Building and running
 
