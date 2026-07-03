@@ -18,9 +18,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     curl \
     ca-certificates \
+    unzip \
     && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
     && chmod +x /usr/local/bin/yt-dlp \
-    && apt-get purge -y curl \
+    && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
+    && apt-get purge -y curl unzip \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/nuclear-radio /usr/local/bin/
